@@ -230,18 +230,43 @@ def _unpatchify(x, p):
     return imgs
 
 
-def spearman_correlation(teacher_logit, student_logit):
-    # 排序张量
-    teacher_rank = torch.argsort(torch.argsort(teacher_logit))
-    student_rank = torch.argsort(torch.argsort(student_logit))
+def softmax_sort(x, temperature=1.0):
+    """
+    Softmax-based differentiable sorting.
 
-    # 归一化排名
-    teacher_rank = (teacher_rank - teacher_rank.min().float()) / (
-                teacher_rank.max().float() - teacher_rank.min().float() + 1e-6) * 10
-    student_rank = (student_rank - student_rank.min().float()) / (
-                student_rank.max().float() - student_rank.min().float() + 1e-6) * 10
-    # teacher_rank = (teacher_rank - teacher_rank.float().mean()) / teacher_rank.float().std()
-    # student_rank = (student_rank - student_rank.float().mean()) / student_rank.float().std()
+    Args:
+        x (torch.Tensor): Input tensor to sort, shape [batch_size, num_elements].
+        temperature (float): Softmax temperature parameter. Lower values make the sorting sharper.
+
+    Returns:
+        torch.Tensor: Soft sorted tensor, shape [batch_size, num_elements].
+    """
+    # Get the size of the input tensor
+    n = x.size(-1)
+
+    # Expand the input tensor to create pairwise comparisons
+    x_expanded = x.unsqueeze(-2).expand(-1, n, -1)
+    x_transpose = x.unsqueeze(-1).expand(-1, -1, n)
+
+    # Compute the difference between each pair of elements
+    diff = x_transpose - x_expanded
+
+    # Apply Softmax to compute weights
+    soft_ranks = F.softmax(diff / temperature, dim=-1)
+
+    # Compute the soft-sorted output by weighting elements
+    sorted_x = torch.matmul(x, soft_ranks)
+
+    return sorted_x
+
+
+def spearman_correlation(teacher_logit, student_logit):
+    # teacher_logit = torch.tensor([[3.0, 1.0, 2.0]])
+    # teacher_rank = torch.argsort(torch.argsort(teacher_logit))
+    # student_rank = torch.argsort(torch.argsort(student_logit))
+    # softmax排序张量
+    teacher_rank = softmax_sort(teacher_logit)
+    student_rank = softmax_sort(student_logit)
 
     # 计算排名差的平方
     d = teacher_rank - student_rank
